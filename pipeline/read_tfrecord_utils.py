@@ -1,7 +1,13 @@
 import numpy as np
 import tensorflow as tf
 import os, math, cv2, random
+import glob, re
 
+def sorted_nicely( l ): 
+    """ Sort the given iterable in the way that humans expect.""" 
+    convert = lambda text: int(text) if text.isdigit() else text 
+    alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
+    return sorted(l, key = alphanum_key)
 
 def _int64_feature(value):
     if not isinstance(value,list):
@@ -20,21 +26,36 @@ def _bytes_feature(value):
 
 
 def input_fn(self, filenames):
-    files = tf.data.Dataset.list_files(filenames)
-    #read files in parallel and decrypt in parallel
-    with tf.device('/cpu:0'):
-        dataset = files.apply(tf.contrib.data.parallel_interleave(
-            tf.data.TFRecordDataset,cycle_length = self.num_parallel_readers))
+    if not self.sequence:
+        files = tf.data.Dataset.list_files(filenames)
+    
+        #read files in parallel and decrypt in parallel
+        with tf.device('/cpu:0'):
+            dataset = files.apply(tf.contrib.data.parallel_interleave(
+                tf.data.TFRecordDataset,cycle_length = self.num_parallel_readers))
 
-        dataset = dataset.shuffle(buffer_size= self.shuffle_buffer_size)
+            dataset = dataset.shuffle(buffer_size= self.shuffle_buffer_size)
 
-        if self.classification:
-            dataset = dataset.apply(tf.contrib.data.map_and_batch(
-                map_func = class_parse_fn, batch_size=self.batch_size))
-        else:
-            dataset = dataset.apply(tf.contrib.data.map_and_batch(
-                map_func = box_parse_fn, batch_size=self.batch_size))
-        dataset = dataset.prefetch(buffer_size = self.prefetch_buffer_size)
+            if self.classification:
+                dataset = dataset.apply(tf.contrib.data.map_and_batch(
+                    map_func = class_parse_fn, batch_size=self.batch_size))
+            else:
+                dataset = dataset.apply(tf.contrib.data.map_and_batch(
+                    map_func = box_parse_fn, batch_size=self.batch_size))
+            dataset = dataset.prefetch(buffer_size = self.prefetch_buffer_size)
+    else:
+        files = glob.glob(filenames)
+        files = sorted_nicely(files)
+        with tf.device('/cpu:0'):
+            dataset = tf.data.TFRecordDataset(files)
+
+            if self.classification:
+                dataset = dataset.apply(tf.contrib.data.map_and_batch(
+                    map_func = class_parse_fn, batch_size=self.batch_size))
+            else:
+                dataset = dataset.apply(tf.contrib.data.map_and_batch(
+                    map_func = box_parse_fn, batch_size = self.batch_size))
+            dataset = dataset.prefetch(buffer_size = self.prefetch_buffer_size)
     return dataset
 
 def box_parse_fn(example):

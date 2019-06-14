@@ -10,7 +10,8 @@ from .write_tfrecord_utils import *
 
 class DataReader:
     def __init__(self,classification=False,batch_size=32, shuffle_buffer_size=4, prefetch_buffer_size=1,
-            num_parallel_calls=4, num_parallel_readers=1,image_size=(416,416)):
+            num_parallel_calls=4,
+            num_parallel_readers=1,image_size=(416,416),sequence=False):
         self.classification = classification
         self.batch_size = batch_size
         self.shuffle_buffer_size = shuffle_buffer_size
@@ -18,6 +19,7 @@ class DataReader:
         self.num_parallel_calls = num_parallel_calls
         self.num_parallel_readers = num_parallel_readers
         self.image_size = image_size
+        self.sequence = sequence
 
     def get_batch(self,filenames=None):
         return input_fn(self,filenames)
@@ -120,6 +122,8 @@ class DataWriter:
         self.images = []
         self.labels = []
         pbar = tqdm(scenes)
+        print(scenes)
+        input("Wait")
         for scene_dir in pbar:
             img_locs = scene_dir+'img1/'
             annot_loc = scene_dir+'gt/gt.txt'

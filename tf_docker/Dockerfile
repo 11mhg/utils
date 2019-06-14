@@ -36,19 +36,24 @@ RUN apt-get install -yq --no-install-recommends \
     unzip \
     nano 
 
+RUN apt-get install -y libopencv-dev python3-opencv
+
 RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen
 
-
 RUN apt-get install -y python3 python3-pip 
 
-
-RUN pip3 install tensorflow-gpu==1.13.1
-RUN pip3 install numpy matplotlib jupyter scikit-learn scipy pillow opencv-python
+RUN pip3 install tensorflow-gpu==1.13.1 
+RUN pip3 install numpy matplotlib jupyter scikit-learn scipy pillow jupyterhub jupyterlab tqdm 
+RUN pip3 install 'prompt-toolkit<2.0.0,>=1.0.15' --force-reinstall 
 
 EXPOSE 8888
 EXPOSE 6006
 
+
+ENV PYTHONPATH="$PYTHONPATH:/home/utils/"
+
 WORKDIR "/home/"
+
 
 CMD /bin/bash

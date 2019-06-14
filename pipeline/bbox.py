@@ -2,7 +2,8 @@ import numpy as np
 
 class Box():
 
-    def __init__(self, x0=None, y0=None, x1=None,y1=None, cx=None, cy=None, w = None, h = None,label=None):
+    def __init__(self, x0=None, y0=None, x1=None,y1=None, cx=None, cy=None, 
+            w = None, h = None,label=None,score=None):
         if (x0==None or y0==None or x1==None or y1==None) and (cx==None or cy==None or w==None or h==None):
             raise ValueError("You must actually input values into either x0y0x1y1 or cxcywh")
         elif x0 == None and y0== None and x1==None and y1==None:
@@ -31,6 +32,7 @@ class Box():
             self.h = h
             self.cxcy = [self.cx,self.cy,self.w,self.h]
         self.label = label
+        self.score = score
         if self.x1 < self.x0 or self.y1 < self.y0:
             raise ValueError("x1,y1 may be smaller than x0,y0 implying you aren't following standards of top left bottom right (x0y0x1y1). Double Check")
 
