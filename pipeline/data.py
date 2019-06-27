@@ -122,8 +122,7 @@ class DataWriter:
         self.images = []
         self.labels = []
         pbar = tqdm(scenes)
-        print(scenes)
-        input("Wait")
+        
         for scene_dir in pbar:
             img_locs = scene_dir+'img1/'
             annot_loc = scene_dir+'gt/gt.txt'
