@@ -1,3 +1,4 @@
+import sys
 import tensorflow as tf
 
 #all the following calculations come with the assumption
@@ -47,7 +48,7 @@ def tf_giou_corners(bboxes1, bboxes2, scope=None):
 
         enclose_area = tf.maximum((x2c-x1c),0)*tf.maximum((y2c-y1c),0)
 
-        inter_area = tf.maximum((xI2 - xI1),0) * tf.maximum((yI2 - yI1),0)
+        inter_area = tf.maximum(tf.maximum((xI2 - xI1),0) * tf.maximum((yI2 - yI1),0),0)
     
         bboxes1_area = (x12 - x11) * (y12 - y11)
         bboxes2_area = (x22 - x21) * (y22 - y21)
@@ -57,7 +58,7 @@ def tf_giou_corners(bboxes1, bboxes2, scope=None):
         epsilon = tf.constant(0.0001,dtype=tf.float32)
         IOU = inter_area / (union+epsilon)
         
-        GIOU = IOU - ((enclose_area - union)/(enclose_area))
+        GIOU = IOU - ((enclose_area - union)/(enclose_area+epsilon))
         return GIOU
 
 def tf_iou_centers(bboxes1,bboxes2,scope=None):
@@ -94,3 +95,50 @@ def tf_cxcy(bboxes,scope=None):
         cy = y0+(h/2.)
 
         return tf.concat([cx,cy,w,h],axis=-1)
+
+def tf_diff(tensor):
+    return tensor[1:]-tensor[:-1]
+
+
+#performs the tf ldlj iou on temporal boxes of shape
+#[TIMESTEPS,4]
+def tf_iou_ldlj(boxes,fs,scope=None):
+    with tf.name_scope(scope,'iou_ldlj') as new_scope:
+        ious = tf_iou_corners(boxes[:-1],boxes[1:],scope = new_scope)
+        s_ious = 1. - tf.linalg.diag_part(ious)
+        a_ious = tf_diff(s_ious)
+        j_ious = tf_diff(a_ious)
+        peak_iou = tf.reduce_max(s_ious)
+        dt = tf.constant(1./fs,tf.float32)
+        duration = tf.cast(tf.size(s_ious),tf.float32) * dt
+        scale = tf.truediv(tf.pow(duration,5),tf.pow(peak_iou,2))
+        dlj_val = -scale * tf.reduce_sum(tf.pow(j_ious,
+                    2))*dt
+        ldlj_val = -tf.log1p(tf.abs(dlj_val))
+
+    return ldlj_val
+
+
+
+def tf_giou_ldlj(boxes,fs,scope=None):
+    with tf.name_scope(scope,'giou_ldlj') as new_scope:
+        gious = tf_giou_corners(boxes[:-1],boxes[1:],scope = new_scope)
+        s_gious = 1. - tf.linalg.diag_part(gious)
+        a_gious = tf_diff(s_gious)
+        j_gious = tf_diff(a_gious)
+        peak_giou = tf.reduce_max(s_gious)
+        dt = tf.constant(1./fs,tf.float32)
+        duration = tf.cast(tf.size(s_gious),tf.float32) * dt
+        scale = tf.truediv(tf.pow(duration,5),tf.pow(peak_giou,2))
+        dlj_val = -scale * tf.reduce_sum(tf.pow(j_gious,
+                    2))*dt
+
+        ldlj_val = -tf.log1p(tf.abs(dlj_val))
+
+    return ldlj_val
+
+
+
+
+
+

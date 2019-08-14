@@ -50,6 +50,7 @@ class DataWriter:
 
         print("Beginning processing of {}.".format(self.name))
         out_dict = {}
+        num_classes = 0
         for i in range(len(annot_json['images'])):
             image_name = os.path.join(img_dir,annot_json['images'][i]['file_name'])
             if not os.path.exists(image_name):
@@ -99,6 +100,8 @@ class DataWriter:
             ls = out_dict[img_id]['labels']
             boxes = []
             for ind in range(len(bxs)):
+                if int(ls[ind]) > num_classes:
+                    num_classes = int(ls[ind])
                 boxes.append(Box(x0=bxs[ind][0],y0=bxs[ind][1],x1=bxs[ind][2],y1=bxs[ind][3],label=ls[ind]))
             if len(boxes) > self.max_boxes:
                 self.max_boxes = len(boxes)
@@ -111,6 +114,7 @@ class DataWriter:
         self.num_shards = len(self.images)//self.num_elem_per_shard
         self.images = np.array(self.images)
         self.labels = np.array(self.labels)
+        print("Num classes : {}".format(num_classes))
         return
 
     def MOT(self,dataset='train'):
