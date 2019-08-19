@@ -1,0 +1,90 @@
+WARNING:tensorflow:From /usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/op_def_library.py:263: colocate_with (from tensorflow.python.framework.ops) is deprecated and will be removed in a future version.
+Instructions for updating:
+Colocations handled automatically by placer.
+2019-08-17 22:40:29.409855: I tensorflow/core/platform/profile_utils/cpu_utils.cc:94] CPU Frequency: 2294655000 Hz
+2019-08-17 22:40:29.413008: I tensorflow/compiler/xla/service/service.cc:161] XLA service 0x56cfd90 executing computations on platform Host. Devices:
+2019-08-17 22:40:29.413046: I tensorflow/compiler/xla/service/service.cc:168]   StreamExecutor device (0): <undefined>, <undefined>
+2019-08-17 22:40:29.816675: I tensorflow/compiler/xla/service/service.cc:161] XLA service 0x579a8d0 executing computations on platform CUDA. Devices:
+2019-08-17 22:40:29.816740: I tensorflow/compiler/xla/service/service.cc:168]   StreamExecutor device (0): GeForce GTX 1080 Ti, Compute Capability 6.1
+2019-08-17 22:40:29.816758: I tensorflow/compiler/xla/service/service.cc:168]   StreamExecutor device (1): GeForce GTX 1080 Ti, Compute Capability 6.1
+2019-08-17 22:40:29.816773: I tensorflow/compiler/xla/service/service.cc:168]   StreamExecutor device (2): Quadro K2200, Compute Capability 5.0
+2019-08-17 22:40:29.817339: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1433] Found device 0 with properties: 
+name: GeForce GTX 1080 Ti major: 6 minor: 1 memoryClockRate(GHz): 1.62
+pciBusID: 0000:04:00.0
+totalMemory: 10.92GiB freeMemory: 10.77GiB
+2019-08-17 22:40:29.817425: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1433] Found device 1 with properties: 
+name: GeForce GTX 1080 Ti major: 6 minor: 1 memoryClockRate(GHz): 1.62
+pciBusID: 0000:05:00.0
+totalMemory: 10.92GiB freeMemory: 10.77GiB
+2019-08-17 22:40:29.817496: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1433] Found device 2 with properties: 
+name: Quadro K2200 major: 5 minor: 0 memoryClockRate(GHz): 1.124
+pciBusID: 0000:81:00.0
+totalMemory: 3.95GiB freeMemory: 3.75GiB
+2019-08-17 22:40:29.819670: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1483] Ignoring visible gpu device (device: 2, name: Quadro K2200, pci bus id: 0000:81:00.0, compute capability: 5.0) with Cuda compute capability 5.0. The minimum required Cuda capability is 5.2.
+2019-08-17 22:40:29.819704: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1512] Adding visible gpu devices: 0, 1
+2019-08-17 22:40:30.847306: I tensorflow/core/common_runtime/gpu/gpu_device.cc:984] Device interconnect StreamExecutor with strength 1 edge matrix:
+2019-08-17 22:40:30.847378: I tensorflow/core/common_runtime/gpu/gpu_device.cc:990]      0 1 2 
+2019-08-17 22:40:30.847393: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1003] 0:   N Y N 
+2019-08-17 22:40:30.847401: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1003] 1:   Y N N 
+2019-08-17 22:40:30.847409: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1003] 2:   N N N 
+2019-08-17 22:40:30.847605: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1115] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:0 with 10413 MB memory) -> physical GPU (device: 0, name: GeForce GTX 1080 Ti, pci bus id: 0000:04:00.0, compute capability: 6.1)
+2019-08-17 22:40:30.848362: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1115] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:1 with 10413 MB memory) -> physical GPU (device: 1, name: GeForce GTX 1080 Ti, pci bus id: 0000:05:00.0, compute capability: 6.1)
+2019-08-17 22:40:31.182601: W tensorflow/core/framework/op_kernel.cc:1401] OP_REQUIRES failed at strided_slice_op.cc:106 : Invalid argument: slice index 16 of dimension 0 out of bounds.
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 1334, in _do_call
+    return fn(*args)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 1319, in _run_fn
+    options, feed_dict, fetch_list, target_list, run_metadata)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 1407, in _call_tf_sessionrun
+    run_metadata)
+tensorflow.python.framework.errors_impl.InvalidArgumentError: slice index 16 of dimension 0 out of bounds.
+	 [[{{node sliding_dft/while/strided_slice_2}}]]
+	 [[{{node sliding_dft/while/while_1/strided_slice_1/stack}}]]
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 929, in run
+    run_metadata_ptr)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 1152, in _run
+    feed_dict_tensor, options, run_metadata)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 1328, in _do_run
+    run_metadata)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/client/session.py", line 1348, in _do_call
+    raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors_impl.InvalidArgumentError: slice index 16 of dimension 0 out of bounds.
+	 [[node sliding_dft/while/strided_slice_2 (defined at /home/utils/metrics/tf_metrics.py:380) ]]
+	 [[node sliding_dft/while/while_1/strided_slice_1/stack (defined at /home/utils/metrics/tf_metrics.py:393) ]]
+
+Caused by op 'sliding_dft/while/strided_slice_2', defined at:
+  File "<string>", line 1, in <module>
+  File "/home/utils/metrics/tf_metrics.py", line 406, in tf_sdft
+    [i,ii,iii,N_t,input_tensor])
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/ops/control_flow_ops.py", line 3556, in while_loop
+    return_same_structure)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/ops/control_flow_ops.py", line 3087, in BuildLoop
+    pred, body, original_loop_vars, loop_vars, shape_invariants)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/ops/control_flow_ops.py", line 3022, in _BuildLoop
+    body_result = body(*packed_vars_for_body)
+  File "/home/utils/metrics/tf_metrics.py", line 380, in body1
+    assign_op = in_s[0].assign(tf.complex(tf.cast(input_tensor[i],tf.float32),
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/ops/array_ops.py", line 654, in _slice_helper
+    name=name)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/ops/array_ops.py", line 820, in strided_slice
+    shrink_axis_mask=shrink_axis_mask)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/ops/gen_array_ops.py", line 9356, in strided_slice
+    shrink_axis_mask=shrink_axis_mask, name=name)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/op_def_library.py", line 788, in _apply_op_helper
+    op_def=op_def)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/util/deprecation.py", line 507, in new_func
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/ops.py", line 3300, in create_op
+    op_def=op_def)
+  File "/usr/local/lib/python3.5/dist-packages/tensorflow/python/framework/ops.py", line 1801, in __init__
+    self._traceback = tf_stack.extract_stack()
+
+InvalidArgumentError (see above for traceback): slice index 16 of dimension 0 out of bounds.
+	 [[node sliding_dft/while/strided_slice_2 (defined at /home/utils/metrics/tf_metrics.py:380) ]]
+	 [[node sliding_dft/while/while_1/strided_slice_1/stack (defined at /home/utils/metrics/tf_metrics.py:393) ]]
+

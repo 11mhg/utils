@@ -1,5 +1,40 @@
 import sys
+from cmath import cos, sin, pi
+import numpy as np
 import tensorflow as tf
+
+
+#Batched versions of code
+
+def tf_batched_iou_corners(bboxes1,bboxes2,scope=None):
+    with tf.name_scope(scope,'batched_IOU') as new_scope:
+        @tf.function
+        def func(bboxes1,bboxes2,scope=None):
+            bs = bboxes.shape[0]
+            batch_ious = tf.TensorArray(tf.float32,size=bs)
+            for i in tf.range(bs):
+                boxes1 = bboxes1[i]
+                boxes2 = bboxes2[i]
+                iou = tf_iou_corners(boxes1,boxes2,scope=new_scope)
+                batch_ious = batch_ious.write(i,iou)
+            return batch_ious
+        return func(bboxes1,bboxes2,new_scope)
+
+def tf_batched_giou_corners(bboxes1,bboxes2,scope=None):
+    with tf.name_scope(scope,'batched_GIOU') as new_scope:
+        @tf.function
+        def func(bboxes1,bboxes2,scope=None):
+            bs = bboxes.shape[0]
+            batch_gious = tf.TensorArray(tf.float32,size=bs)
+            for i in tf.range(bs):
+                boxes1 = bboxes1[i]
+                boxes2 = bboxes2[i]
+                giou = tf_giou_corners(boxes1,boxes2,scope=new_scope)
+                batch_gious = batch_gious.write(i,giou)
+            return batch_gious
+        return func(bboxes1,bboxes2,new_scope)
+
+
 
 #all the following calculations come with the assumption
 #That the pairwise boxes are already matched
@@ -25,7 +60,12 @@ def tf_iou_corners(bboxes1,bboxes2,scope=None):
     
         epsilon = tf.constant(0.0001,dtype=tf.float32)
     
-        return inter_area / (union+epsilon)
+        iou =  inter_area / (union+epsilon)
+        #If we have a NaN, we divided by zero, return 
+        #worst possible value of 0
+        iou = tf.where(tf.is_nan(iou),tf.zeros_like(iou),iou)
+        return iou
+
 
 #Returns a generalized IOU 
 #Basic idea is that instead of flattening to zero
@@ -59,6 +99,10 @@ def tf_giou_corners(bboxes1, bboxes2, scope=None):
         IOU = inter_area / (union+epsilon)
         
         GIOU = IOU - ((enclose_area - union)/(enclose_area+epsilon))
+        
+        #If we have a nan, it is because we are dividing by 0, just return
+        #worst possible GIOU  
+        GIOU = tf.where(tf.is_nan(GIOU),-tf.ones_like(GIOU),GIOU) 
         return GIOU
 
 def tf_iou_centers(bboxes1,bboxes2,scope=None):
@@ -136,6 +180,275 @@ def tf_giou_ldlj(boxes,fs,scope=None):
         ldlj_val = -tf.log1p(tf.abs(dlj_val))
 
     return ldlj_val
+
+
+def tf_iou_sal(boxes, fs, window_size=16, padlevel=4, fc=10.0, amp_th= 0.05, scope=None):
+    print(boxes)
+    with tf.name_scope(scope,'iou_sal') as new_scope:
+        fs = tf.constant(fs,dtype=tf.float32)
+        fc = tf.constant(fc,dtype=tf.float32)
+        amp_th = tf.constant(amp_th)
+
+        ious = tf_iou_corners(boxes[:-1],boxes[1:],scope=new_scope)
+        s_ious = 1. - tf.linalg.diag_part(ious)
+#        print(s_ious)
+
+        t_steps = tf.size(s_ious,out_type=tf.float32)
+        nfft = tf.truediv(tf.log(t_steps),tf.log(2.))
+        nfft = tf.cast(tf.ceil(nfft),tf.int32) + tf.constant(padlevel)
+        nfft = tf.pow(2.,tf.cast(nfft,tf.float32))
+        nfft = tf.cast(nfft,tf.float32)
+#        print("NFFT: ",nfft)
+        #THROW A CHECK HERE
+
+        f = tf.range(tf.constant(0),fs,window_size)
+        
+        input_pad = tf.zeros([nfft])
+        s_ious = tf.concat([s_ious,input_pad],0)
+#        print(s_ious)
+        sdft_obj = tf_sdft(N=window_size)
+        freqs = sdft_obj.sdft_func(s_ious)
+
+        Mf = tf.abs(freqs)
+
+        #Normalize???
+        max_Mf = tf.reduce_max(Mf)
+        Mf = tf.truediv(Mf,max_Mf)
+
+        size_Mf = tf.size(Mf)
+        size_f  = tf.size(f)
+        pad_size = size_Mf - size_f
+#        print(f,Mf)
+        paddings = [[pad_size,0]]
+        f = tf.pad(f,paddings)
+
+        fc_inx = tf.math.less_equal(f,fc)
+        f_sel = tf.boolean_mask(f, fc_inx) 
+        Mf_sel = tf.boolean_mask(Mf, fc_inx)
+
+        inx = tf.math.greater_equal(Mf_sel,amp_th)
+        f_sel = tf.boolean_mask(f_sel,inx)
+        Mf_sel = tf.boolean_mask(Mf_sel,inx)
+
+
+
+        #Certain cases give us an f_sel and Mf_sel that are far too noisy and
+        #don't register properly. Give the worst possible SAL for this.
+        f_sel_num = tf.size(f_sel)
+
+        def empty_fsel():
+            freq = tf.Variable([0,1],dtype=tf.float32,name='template-f_sel')
+            Mfreq = tf.Variable([1,0.05],dtype=tf.float32,name='template-Mf_sel')
+            print_op = tf.print("Substituted by: ",freq,Mfreq)
+            with tf.control_dependencies([print_op]):
+                freq = tf.identity(freq)
+                Mfreq = tf.identity(Mfreq)
+            return freq, Mfreq
+
+        def not_empty_fsel():
+            freq = tf.identity(f_sel)
+            Mfreq = tf.identity(Mf_sel)
+            return freq, Mfreq
+
+        cond_bool = tf.math.equal(f_sel_num, tf.constant(0))
+        f_sel, Mf_sel = tf.cond( cond_bool, empty_fsel , not_empty_fsel )
+
+
+#        print_op = tf.print("Output of f_sel: ",f_sel,"\nOutput of Mf_sel:"
+#                ,Mf_sel, "\nf_sel_num: ",f_sel_num, "\nboolean condition:"
+#                ,cond_bool)
+#        with tf.control_dependencies([print_op]):
+        new_sal = -tf.reduce_sum(tf.sqrt(tf.pow(tf_diff(f_sel)/(f_sel[-1]-f_sel[0]), 2.) +
+            tf.pow(tf_diff(Mf_sel), 2.)))
+
+
+
+
+        return new_sal
+
+
+
+def tf_giou_sal(boxes, fs, window_size=16, padlevel=1, fc=10.0, amp_th= 0.05, scope=None):
+    print(boxes)
+    with tf.name_scope(scope,'giou_sal') as new_scope:
+        fs = tf.constant(fs,dtype=tf.float32)
+        fc = tf.constant(fc,dtype=tf.float32)
+        amp_th = tf.constant(amp_th)
+        
+        ious = tf_giou_corners(boxes[:-1],boxes[1:],scope=new_scope)
+        s_ious = 1. - tf.linalg.diag_part(ious)
+#        print(s_ious)
+
+        t_steps = tf.size(s_ious,out_type=tf.float32)
+        nfft = tf.truediv(tf.log(t_steps),tf.log(2.))
+        nfft = tf.cast(tf.ceil(nfft),tf.int32) + tf.constant(padlevel)
+        nfft = tf.pow(2.,tf.cast(nfft,tf.float32))
+        nfft = tf.cast(nfft,tf.float32)
+#        print("NFFT: ",nfft)
+        #THROW A CHECK HERE
+
+        f = tf.range(tf.constant(0),fs,window_size)
+        
+        input_pad = tf.zeros([nfft])
+        s_ious = tf.concat([s_ious,input_pad],0)
+#        print(s_ious)
+        sdft_obj = tf_sdft(N=window_size)
+        freqs = sdft_obj.sdft_func(s_ious)
+
+        Mf = tf.abs(freqs)
+
+        #Normalize???
+        max_Mf = tf.reduce_max(Mf)
+        Mf = tf.truediv(Mf,max_Mf)
+
+        size_Mf = tf.size(Mf)
+        size_f  = tf.size(f)
+        pad_size = size_Mf - size_f
+#        print(f,Mf)
+        paddings = [[pad_size,0]]
+        f = tf.pad(f,paddings)
+
+        fc_inx = tf.math.less_equal(f,fc)
+        f_sel = tf.boolean_mask(f, fc_inx) 
+        Mf_sel = tf.boolean_mask(Mf, fc_inx)
+
+        inx = tf.math.greater_equal(Mf_sel,amp_th)
+        f_sel = tf.boolean_mask(f_sel,inx)
+        Mf_sel = tf.boolean_mask(Mf_sel,inx)
+
+        #Certain cases give us an f_sel and Mf_sel that are far too noisy and
+        #don't register properly. Give the worst possible SAL for this.
+        f_sel_num = tf.size(f_sel)
+
+        def empty_fsel():
+            freq = tf.Variable([0,1],dtype=tf.float32,name='template-f_sel')
+            Mfreq = tf.Variable([1,0.05],dtype=tf.float32,name='template-Mf_sel')
+            print_op = tf.print("Substituted by: ",freq,Mfreq)
+            with tf.control_dependencies([print_op]):
+                freq = tf.identity(freq)
+                Mfreq = tf.identity(Mfreq)
+            return freq, Mfreq
+
+        def not_empty_fsel():
+            freq = tf.identity(f_sel)
+            Mfreq = tf.identity(Mf_sel)
+            return freq, Mfreq
+
+        cond_bool = tf.math.equal(f_sel_num, tf.constant(0))
+        f_sel, Mf_sel = tf.cond( cond_bool, empty_fsel , not_empty_fsel )
+
+
+#        print_op = tf.print("Output of f_sel: ",f_sel,"\nOutput of Mf_sel:"
+#                ,Mf_sel, "\nf_sel_num: ",f_sel_num, "\nboolean condition:"
+#                ,cond_bool)
+#        with tf.control_dependencies([print_op]):
+        new_sal = -tf.reduce_sum(tf.sqrt(tf.pow(tf_diff(f_sel)/(f_sel[-1]-f_sel[0]), 2.) +
+            tf.pow(tf_diff(Mf_sel), 2.)))
+
+        return new_sal
+
+
+
+
+class tf_sdft:
+
+    def __init__(self,N=16,scope=None):
+        self.N = N
+        self.scope = scope
+        self.initialize()
+
+    #set initial values for twiddle and frequencies
+    #and input signal
+    def initialize(self):
+        with tf.name_scope(self.scope,'sliding_dft') as new_scope:
+            coeffs = []
+            freqs = []
+            in_s = []
+            for i in range(self.N):
+                a = 2.0 * pi * i /self.N
+                coeffs.append(complex(cos(a),sin(a)))
+                freqs.append(complex(0,0))
+                in_s.append(complex(0,0))
+            coeffs = np.array(coeffs,dtype=np.complex64)
+            freqs = np.array(freqs,dtype=np.complex64)
+            in_s = np.array(in_s,dtype=np.complex64)
+            self.N_t = tf.constant(self.N)
+         
+            with tf.variable_scope("sdft_vars",reuse=tf.AUTO_REUSE):        
+                #Convert to variables so we can actually perform 
+                self.coeffs = tf.get_variable('coeffs',coeffs.shape,
+                        trainable=False,dtype=tf.complex64,
+                        initializer=tf.constant_initializer(coeffs))
+                self.freqs = tf.get_variable('freqs',freqs.shape,
+                        trainable=False,dtype=tf.complex64,
+                        initializer=tf.constant_initializer(freqs))
+                self.in_s = tf.get_variable('in_s',in_s.shape,
+                        trainable=False,dtype=tf.complex64,
+                        initializer=tf.constant_initializer(in_s))
+
+    def get_variables(self):
+        with tf.variable_scope("sdft_vars",reuse=True):        
+            #Convert to variables so we can actually perform 
+            self.coeffs = tf.get_variable('coeffs',dtype=tf.complex64)
+            self.freqs = tf.get_variable('freqs',dtype=tf.complex64)
+            self.in_s = tf.get_variable('in_s',dtype=tf.complex64)
+        return self.coeffs, self.freqs, self.in_s
+
+    def sdft_func(self,input_tensor):
+
+        @tf.function
+        def func(input_tensor,N_t,in_s,coeffs,freqs):
+            in_s = tf.identity(in_s)
+            coeffs = tf.identity(coeffs)
+            freqs = tf.identity(freqs)
+
+
+            for i in range(N_t):
+                last = in_s[self.N_t-1]
+    
+                in_s = in_s[:-1]
+                new_val = tf.expand_dims(tf.complex(input_tensor[i],
+                    tf.cast(0.0,dtype=tf.float32)),0)
+                
+                in_s = tf.concat([new_val,in_s],axis=0)
+                delta = in_s[0] - last
+               
+                freqs_2 = tf.TensorArray(tf.complex64,size=self.N)
+
+                for j in range(self.N_t): 
+                    freqs_2 = freqs_2.write(j,(freqs[j]+delta)*coeffs[j])
+                freqs = freqs_2.stack()
+                freqs.set_shape([self.N])
+
+            return freqs,in_s
+        
+        new_freqs, new_in_s = func(input_tensor,self.N_t,
+                self.in_s,self.coeffs,self.freqs)
+        
+        self.in_s = self.in_s.assign(new_in_s)
+        self.freqs = self.freqs.assign(new_freqs)
+
+        with tf.control_dependencies([self.in_s,self.freqs]):
+            new_freqs = tf.identity(new_freqs)
+
+        return new_freqs
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
