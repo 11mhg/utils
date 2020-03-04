@@ -61,6 +61,7 @@ def tf_iou_corners(bboxes1,bboxes2,scope=None):
         epsilon = tf.constant(0.0001,dtype=tf.float32)
     
         iou =  inter_area / (union+epsilon)
+
         #If we have a NaN, we divided by zero, return 
         #worst possible value of 0
         iou = tf.where(tf.is_nan(iou),tf.zeros_like(iou),iou)
@@ -98,11 +99,12 @@ def tf_giou_corners(bboxes1, bboxes2, scope=None):
         epsilon = tf.constant(0.0001,dtype=tf.float32)
         IOU = inter_area / (union+epsilon)
         
-        GIOU = IOU - ((enclose_area - union)/(enclose_area+epsilon))
+        GIOU = tf.minimum(tf.maximum(IOU - ((enclose_area - union)/(enclose_area+epsilon)),-1),1)
         
         #If we have a nan, it is because we are dividing by 0, just return
         #worst possible GIOU  
 
+        
         IOU = tf.where(tf.is_nan(IOU),tf.zeros_like(IOU),IOU)
 
         GIOU = tf.where(tf.is_nan(GIOU),-tf.ones_like(GIOU),GIOU) 
@@ -152,45 +154,40 @@ def tf_diff(tensor):
 def tf_iou_ldlj(boxes,fs,scope=None):
     with tf.name_scope(scope,'iou_ldlj') as new_scope:
         ious = tf_iou_corners(boxes[:-1],boxes[1:],scope = new_scope)
-        s_ious = 1. - tf.linalg.diag_part(ious)
-        a_ious = tf_diff(s_ious)
-        j_ious = tf_diff(a_ious)
-        peak_iou = tf.reduce_max(s_ious)
-        dt = tf.constant(1./fs,tf.float32)
-        duration = tf.cast(tf.size(s_ious),tf.float32) * dt
-        scale = tf.truediv(tf.pow(duration,5),tf.pow(peak_iou,2))
-        dlj_val = -scale * tf.reduce_sum(tf.pow(j_ious,
-                    2))*dt
-        ldlj_val = -tf.log1p(tf.abs(dlj_val))
+        diag = tf.linalg.diag_part(ious)
+        s_ious = 1. - diag
+        ldlj_val = _ldlj(s_ious,fs,scope=new_scope)
 
     return ldlj_val
 
+
+
+def _ldlj(v, fs, peak = 1, scope=None):
+    with tf.name_scope(scope, 'ldlj') as new_scope:
+        a = tf_diff(v)
+        j = tf_diff(a)
+        peak = tf.constant(peak,dtype=tf.float32)#tf.reduce_max(v) + tf.constant(1e-8,tf.float32)
+        dt = tf.constant(1. /fs, tf.float32)
+        duration = tf.cast(tf.size(v),tf.float32) * dt
+        scale = tf.truediv(tf.pow(duration,5),tf.pow(peak,2))
+        dlj_val = scale * tf.reduce_sum(tf.pow(j,2)) * dt
+        ldlj_val = - tf.log1p(dlj_val)
+    return ldlj_val
 
 
 def tf_giou_ldlj(boxes,fs,scope=None):
     with tf.name_scope(scope,'giou_ldlj') as new_scope:
         _, gious = tf_giou_corners(boxes[:-1],boxes[1:],scope = new_scope)
         s_gious = 1. - tf.linalg.diag_part(gious)
-        a_gious = tf_diff(s_gious)
-        j_gious = tf_diff(a_gious)
-        peak_giou = tf.reduce_max(s_gious)
-        dt = tf.constant(1./fs,tf.float32)
-        duration = tf.cast(tf.size(s_gious),tf.float32) * dt
-        scale = tf.truediv(tf.pow(duration,5),tf.pow(peak_giou,2))
-        dlj_val = -scale * tf.reduce_sum(tf.pow(j_gious,
-                    2))*dt
-
-        ldlj_val = -tf.log1p(tf.abs(dlj_val))
-
+        ldlj_val = _ldlj(s_gious, fs, peak = 2., scope=new_scope)
     return ldlj_val
 
 
-def tf_iou_sal(boxes, fs, window_size=16, padlevel=4, fc=10.0, amp_th= 0.001, scope=None):
-    print(boxes)
+def tf_iou_sal(boxes, fs, window_size=16, padlevel=4, fc=10.0, amp_th= 0.001, scope=None): 
     with tf.name_scope(scope,'iou_sal') as new_scope:
         fs = tf.constant(fs,dtype=tf.float32)
         fc = tf.constant(fc,dtype=tf.float32)
-        amp_th = tf.constant(amp_th)
+        amp_th = tf.constant(amp_th,dtype=tf.float32)
 
         ious = tf_iou_corners(boxes[:-1],boxes[1:],scope=new_scope)
         s_ious = 1. - tf.linalg.diag_part(ious)
@@ -203,8 +200,8 @@ def tf_iou_sal(boxes, fs, window_size=16, padlevel=4, fc=10.0, amp_th= 0.001, sc
         Mf = tf.abs(freqs)
 
         #Normalize???
-        max_Mf = tf.reduce_max(Mf)
-        Mf = tf.truediv(Mf,max_Mf)
+        #max_Mf = tf.reduce_max(Mf)
+        #Mf = tf.truediv(Mf,max_Mf)
 
         fc_inx = tf.math.less_equal(f,fc)
         f_sel = tf.boolean_mask(f, fc_inx) 
@@ -221,8 +218,8 @@ def tf_iou_sal(boxes, fs, window_size=16, padlevel=4, fc=10.0, amp_th= 0.001, sc
         f_sel_num = tf.size(f_sel)
 
         def empty_fsel():
-            freq = tf.Variable([0,1],dtype=tf.float32,name='template-f_sel')
-            Mfreq = tf.Variable([1,0.05],dtype=tf.float32,name='template-Mf_sel')
+            freq = tf.constant([0,1],dtype=tf.float32,name='template-f_sel')
+            Mfreq = tf.constant([1,0.05],dtype=tf.float32,name='template-Mf_sel')
             print_op = tf.print("Substituted by: ",freq,Mfreq)
             with tf.control_dependencies([print_op]):
                 freq = tf.identity(freq)
@@ -237,7 +234,6 @@ def tf_iou_sal(boxes, fs, window_size=16, padlevel=4, fc=10.0, amp_th= 0.001, sc
         cond_bool = tf.math.equal(f_sel_num, tf.constant(0))
         f_sel, Mf_sel = tf.cond( cond_bool, empty_fsel , not_empty_fsel )
 
-
         new_sal = -tf.reduce_sum(tf.sqrt(tf.pow(tf_diff(f_sel)/(f_sel[-1]-f_sel[0]), 2.) +
             tf.pow(tf_diff(Mf_sel), 2.)))
 
@@ -246,11 +242,10 @@ def tf_iou_sal(boxes, fs, window_size=16, padlevel=4, fc=10.0, amp_th= 0.001, sc
 
 
 def tf_giou_sal(boxes, fs, window_size=16, padlevel=1, fc=10.0, amp_th= 0.001, scope=None):
-    print(boxes)
     with tf.name_scope(scope,'giou_sal') as new_scope:
         fs = tf.constant(fs,dtype=tf.float32)
         fc = tf.constant(fc,dtype=tf.float32)
-        amp_th = tf.constant(amp_th)
+        amp_th = tf.constant(amp_th,dtype=tf.float32)
         
         _,gious = tf_giou_corners(boxes[:-1],boxes[1:],scope=new_scope)
         s_ious = 1. - tf.linalg.diag_part(gious)
@@ -280,8 +275,8 @@ def tf_giou_sal(boxes, fs, window_size=16, padlevel=1, fc=10.0, amp_th= 0.001, s
         f_sel_num = tf.size(f_sel)
 
         def empty_fsel():
-            freq = tf.Variable([0,1],dtype=tf.float32,name='template-f_sel')
-            Mfreq = tf.Variable([1,0.05],dtype=tf.float32,name='template-Mf_sel')
+            freq = tf.constant([0,1],dtype=tf.float32,name='template-f_sel')
+            Mfreq = tf.constant([1,0.05],dtype=tf.float32,name='template-Mf_sel')
             print_op = tf.print("Substituted by: ",freq,Mfreq)
             with tf.control_dependencies([print_op]):
                 freq = tf.identity(freq)
