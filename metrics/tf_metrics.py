@@ -6,6 +6,9 @@ import tensorflow as tf
 
 #Batched versions of code
 
+'''
+Processes a batch of ious assuming x1y1x2y2
+'''
 def tf_batched_iou_corners(bboxes1,bboxes2,scope=None):
     with tf.name_scope(scope,'batched_IOU') as new_scope:
         @tf.function
@@ -20,6 +23,9 @@ def tf_batched_iou_corners(bboxes1,bboxes2,scope=None):
             return batch_ious
         return func(bboxes1,bboxes2,new_scope)
 
+'''
+Same as above but for giou
+'''
 def tf_batched_giou_corners(bboxes1,bboxes2,scope=None):
     with tf.name_scope(scope,'batched_GIOU') as new_scope:
         @tf.function
@@ -37,8 +43,7 @@ def tf_batched_giou_corners(bboxes1,bboxes2,scope=None):
 
 
 #all the following calculations come with the assumption
-#That the pairwise boxes are already matched
-#Which is to say that the closes box is already chosen.
+#you are comparing all boxes with all other boxes
 #Also assumes x0y0x1y1
 def tf_iou_corners(bboxes1,bboxes2,scope=None):
     with tf.name_scope(scope,'IOU'):
@@ -62,9 +67,9 @@ def tf_iou_corners(bboxes1,bboxes2,scope=None):
     
         iou =  inter_area / (union+epsilon)
 
-        #If we have a NaN, we divided by zero, return 
-        #worst possible value of 0
-        iou = tf.where(tf.is_nan(iou),tf.zeros_like(iou),iou)
+        #If we have a NaN, we divided by zero (this should not happen, but should not is different
+        #than does not. Instead, replace with worst possible value of 0
+#        iou = tf.where(tf.is_nan(iou),tf.zeros_like(iou),iou)
         return iou
 
 
@@ -105,24 +110,27 @@ def tf_giou_corners(bboxes1, bboxes2, scope=None):
         #worst possible GIOU  
 
         
-        IOU = tf.where(tf.is_nan(IOU),tf.zeros_like(IOU),IOU)
+#        IOU = tf.where(tf.is_nan(IOU),tf.zeros_like(IOU),IOU)
 
-        GIOU = tf.where(tf.is_nan(GIOU),-tf.ones_like(GIOU),GIOU) 
+#        GIOU = tf.where(tf.is_nan(GIOU),-tf.ones_like(GIOU),GIOU) 
         return IOU, GIOU
 
+#Just a convenience function that turns centers to corners and then return
+#the iou of those two.
 def tf_iou_centers(bboxes1,bboxes2,scope=None):
     with tf.name_scope(scope,'IOU_centers') as new_scope:
         bboxes1 = tf_x0y0(bboxes1,scope=new_scope)
         bboxes2 = tf_x0y0(bboxes2,scope=new_scope)
         return tf_iou_corners(bboxes1,bboxes2,scope=new_scope)
 
+#Same as above but for GIOU
 def tf_giou_centers(bboxes1,bboxes2,scope=None):
     with tf.name_scope(scope,'gIOU_centers') as new_scope:
         bboxes1 = tf_x0y0(bboxes1,scope=new_scope)
         bboxes2 = tf_x0y0(bboxes2,scope=new_scope)
         return tf_giou_corners(bboxes1,bboxes2,scope=new_scope)
 
-#Converst cxcy to x0y0
+#Convert cxcy to x0y0 (remember boxes are assumed to be [num_boxes,4])
 def tf_x0y0(bboxes,scope=None):
     with tf.name_scope(scope,'cxcy_to_x0y0'):
         cx, cy, w, h = tf.split(bboxes,4,axis=1)
@@ -134,6 +142,7 @@ def tf_x0y0(bboxes,scope=None):
 
         return tf.concat([x0,y0,x1,y1],axis=-1)
 
+#convert x0y0x1y1 to cxcy
 def tf_cxcy(bboxes,scope=None):
     with tf.name_scope(scope,'x0y0_to_cxcy'):
         x0,y0,x1,y1 = tf.split(bboxes,4,axis=1)
@@ -145,11 +154,12 @@ def tf_cxcy(bboxes,scope=None):
 
         return tf.concat([cx,cy,w,h],axis=-1)
 
+#convenience function for diff 
 def tf_diff(tensor):
     return tensor[1:]-tensor[:-1]
 
 
-#performs the tf ldlj iou on temporal boxes of shape
+#performs the tf ldlj iou on temporal boxes of shape assuming boxes are in x0y0x1y1
 #[TIMESTEPS,4]
 def tf_iou_ldlj(boxes,fs,scope=None):
     with tf.name_scope(scope,'iou_ldlj') as new_scope:
@@ -157,16 +167,16 @@ def tf_iou_ldlj(boxes,fs,scope=None):
         diag = tf.linalg.diag_part(ious)
         s_ious = 1. - diag
         ldlj_val = _ldlj(s_ious,fs,scope=new_scope)
-
     return ldlj_val
 
 
-
+#Sub function for calculation LDLJ
 def _ldlj(v, fs, peak = 1, scope=None):
     with tf.name_scope(scope, 'ldlj') as new_scope:
-        a = tf_diff(v)
-        j = tf_diff(a)
-        peak = tf.constant(peak,dtype=tf.float32)#tf.reduce_max(v) + tf.constant(1e-8,tf.float32)
+        a = tf_diff(v) #acceleration is diff of velocity
+        j = tf_diff(a) #jerk is diff of acceleration
+        peak = tf.constant(peak,dtype=tf.float32)
+        #tf.reduce_max(v) + tf.constant(1e-8,tf.float32)
         dt = tf.constant(1. /fs, tf.float32)
         duration = tf.cast(tf.size(v),tf.float32) * dt
         scale = tf.truediv(tf.pow(duration,5),tf.pow(peak,2))
@@ -174,7 +184,7 @@ def _ldlj(v, fs, peak = 1, scope=None):
         ldlj_val = - tf.log1p(dlj_val)
     return ldlj_val
 
-
+#As tf_giou_ldlj but for gioud as base speed
 def tf_giou_ldlj(boxes,fs,scope=None):
     with tf.name_scope(scope,'giou_ldlj') as new_scope:
         _, gious = tf_giou_corners(boxes[:-1],boxes[1:],scope = new_scope)
@@ -183,6 +193,7 @@ def tf_giou_ldlj(boxes,fs,scope=None):
     return ldlj_val
 
 
+#performs the SAL on the IOU with particular windowsizes and amp/fc thresholding
 def tf_iou_sal(boxes, fs, window_size=16, padlevel=4, fc=10.0, amp_th= 0.001, scope=None): 
     with tf.name_scope(scope,'iou_sal') as new_scope:
         fs = tf.constant(fs,dtype=tf.float32)
