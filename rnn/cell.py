@@ -7,12 +7,14 @@ class ConvLSTMCell(tf.nn.rnn_cell.RNNCell):
     Xingjian, S. H. I., et al. "Convolutional LSTM network: A machine learning approach for precipitation nowcasting." Advances in Neural Information Processing Systems. 2015.
   """
 
-  def __init__(self, shape, filters, kernel, forget_bias=1.0, activation=tf.tanh, normalize=True, peephole=True, data_format='channels_last', kernel_initializer=None,input_initializer=None,
+  def __init__(self, shape, filters, kernel, forget_bias=1.0, output_bias = 1.0, input_bias = 1.0, activation=tf.tanh, normalize=True, peephole=True, data_format='channels_last', kernel_initializer=None,input_initializer=None,
           forget_initializer=None, reuse=None):
     super(ConvLSTMCell, self).__init__(_reuse=reuse)
     self._kernel = kernel
     self._filters = filters
-    self._forget_bias = forget_bias
+    self._forget_bias_init = tf.constant_initializer(value = forget_bias)
+    self._input_bias_init  = tf.constant_initializer(value = input_bias)
+    self._output_bias_init = tf.constant_initializer(value = output_bias)
     self._activation = activation
     self._normalize = normalize
     self._peephole = peephole
@@ -60,8 +62,13 @@ class ConvLSTMCell(tf.nn.rnn_cell.RNNCell):
       i = tf.contrib.layers.layer_norm(i)
       f = tf.contrib.layers.layer_norm(f)
 
+    self._forget_bias = tf.get_variable('forget_bias',[], initializer = self._forget_bias_init)
+    self._input_bias  = tf.get_variable('input_bias', [], initializer = self._input_bias_init)
+    self._output_bias = tf.get_variable('output_bias',[], initializer = self._output_bias_init)
+
+
     f = tf.sigmoid(f + self._forget_bias)
-    i = tf.sigmoid(i)
+    i = tf.sigmoid(i + self._input_bias)
     c = c * f + i * self._activation(j)
 
     if self._peephole:
@@ -71,7 +78,7 @@ class ConvLSTMCell(tf.nn.rnn_cell.RNNCell):
       o = tf.contrib.layers.layer_norm(o)
       c = tf.contrib.layers.layer_norm(c)
 
-    o = tf.sigmoid(o)
+    o = tf.sigmoid(o + self._output_bias)
     h = o * self._activation(c)
 
     state = tf.nn.rnn_cell.LSTMStateTuple(c, h)
