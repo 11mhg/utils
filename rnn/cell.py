@@ -7,7 +7,8 @@ class ConvLSTMCell(tf.nn.rnn_cell.RNNCell):
     Xingjian, S. H. I., et al. "Convolutional LSTM network: A machine learning approach for precipitation nowcasting." Advances in Neural Information Processing Systems. 2015.
   """
 
-  def __init__(self, shape, filters, kernel, forget_bias=1.0, activation=tf.tanh, normalize=True, peephole=True, data_format='channels_last', reuse=None):
+  def __init__(self, shape, filters, kernel, forget_bias=1.0, activation=tf.tanh, normalize=True, peephole=True, data_format='channels_last', kernel_initializer=None,input_initializer=None,
+          forget_initializer=None, reuse=None):
     super(ConvLSTMCell, self).__init__(_reuse=reuse)
     self._kernel = kernel
     self._filters = filters
@@ -15,6 +16,9 @@ class ConvLSTMCell(tf.nn.rnn_cell.RNNCell):
     self._activation = activation
     self._normalize = normalize
     self._peephole = peephole
+    self._kernel_initializer=kernel_initializer
+    self._input_gate_initializer = input_initializer
+    self._forget_gate_initializer= forget_initializer
     if data_format == 'channels_last':
         self._size = tf.TensorShape(shape + [self._filters])
         self._feature_axis = self._size.ndims
@@ -40,15 +44,16 @@ class ConvLSTMCell(tf.nn.rnn_cell.RNNCell):
     x = tf.concat([x, h], axis=self._feature_axis)
     n = x.shape[-1].value
     m = 4 * self._filters if self._filters > 1 else 4
-    W = tf.get_variable('kernel', self._kernel + [n, m])
+    W = tf.get_variable('kernel', self._kernel + [n, m], initializer=self._kernel_initializer)
     y = tf.nn.convolution(x, W, 'SAME', data_format=self._data_format)
     if not self._normalize:
       y += tf.get_variable('bias', [m], initializer=tf.zeros_initializer())
+    #j is new input, i is input gate, f is forget, o is output
     j, i, f, o = tf.split(y, 4, axis=self._feature_axis)
 
     if self._peephole:
-      i += tf.get_variable('W_ci', c.shape[1:]) * c
-      f += tf.get_variable('W_cf', c.shape[1:]) * c
+      i += tf.get_variable('W_ci', c.shape[1:], initializer = self._input_gate_initializer) * c
+      f += tf.get_variable('W_cf', c.shape[1:], initializer = self._forget_gate_initializer) * c
 
     if self._normalize:
       j = tf.contrib.layers.layer_norm(j)

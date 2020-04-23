@@ -166,7 +166,9 @@ def tf_iou_ldlj(boxes,fs,scope=None):
         ious = tf_iou_corners(boxes[:-1],boxes[1:],scope = new_scope)
         diag = tf.linalg.diag_part(ious)
         s_ious = 1. - diag
+        s_ious = tf.debugging.check_numerics(s_ious, 's_ious in ldlj has NaN')
         ldlj_val = _ldlj(s_ious,fs,scope=new_scope)
+        ldlj_val = tf.debugging.check_numerics(ldlj_val, '_ldlj produced a NaN')
     return ldlj_val
 
 
@@ -194,7 +196,7 @@ def tf_giou_ldlj(boxes,fs,scope=None):
 
 
 #performs the SAL on the IOU with particular windowsizes and amp/fc thresholding
-def tf_iou_sal(boxes, fs, window_size=16, padlevel=4, fc=10.0, amp_th= 0.001, scope=None): 
+def tf_iou_sal(boxes, fs, window_size=16, padlevel=4, fc=10.0, amp_th= 0.001, reduce_sum=True, scope=None): 
     with tf.name_scope(scope,'iou_sal') as new_scope:
         fs = tf.constant(fs,dtype=tf.float32)
         fc = tf.constant(fc,dtype=tf.float32)
@@ -202,12 +204,13 @@ def tf_iou_sal(boxes, fs, window_size=16, padlevel=4, fc=10.0, amp_th= 0.001, sc
 
         ious = tf_iou_corners(boxes[:-1],boxes[1:],scope=new_scope)
         s_ious = 1. - tf.linalg.diag_part(ious)
-
+        s_ious = s_ious
         f =tf.range(tf.constant(0),fs,
                 fs/tf.constant(window_size-1,dtype=tf.float32))
 #        print(s_ious)
         sdft_obj = tf_sdft(N=window_size-1,scope=new_scope)
         freqs = sdft_obj.sdft_func(s_ious,scope=new_scope)
+        freqs = tf.real(freqs)
         Mf = tf.abs(freqs)
 
         #Normalize???
@@ -238,16 +241,20 @@ def tf_iou_sal(boxes, fs, window_size=16, padlevel=4, fc=10.0, amp_th= 0.001, sc
             return freq, Mfreq
 
         def not_empty_fsel():
-            freq = tf.identity(f_sel)
-            Mfreq = tf.identity(Mf_sel)
+            freq = tf.identity(f_sel,name='not_empty_fsel')
+            Mfreq = tf.identity(Mf_sel,name='not_empty_mfsel')
             return freq, Mfreq
 
         cond_bool = tf.math.equal(f_sel_num, tf.constant(0))
         f_sel, Mf_sel = tf.cond( cond_bool, empty_fsel , not_empty_fsel )
-
-        new_sal = -tf.reduce_sum(tf.sqrt(tf.pow(tf_diff(f_sel)/(f_sel[-1]-f_sel[0]), 2.) +
-            tf.pow(tf_diff(Mf_sel), 2.)))
-
+        
+        new_sal = tf.sqrt(tf.pow(tf_diff(f_sel)/(tf.abs(f_sel[-1]-f_sel[0])), 2.) + tf.pow(tf_diff(Mf_sel), 2.)) 
+        if reduce_sum:
+            new_sal = -tf.reduce_sum(new_sal)
+        else:
+            new_sal = -1. * new_sal
+        new_sal = tf.real(new_sal)
+        new_sal = tf.cast(new_sal,dtype=tf.float32)
         return new_sal
 
 
@@ -362,11 +369,11 @@ class tf_sdft:
 
     def sdft_func(self,input_tensor,scope=None):
         with tf.name_scope(scope,'sliding_DFT_func') as new_scope:
-            @tf.function
+            @tf.function(autograph=True, experimental_compile=False)
             def func(input_tensor,N_t,in_s,coeffs,freqs):
-                in_s = tf.identity(in_s)
-                coeffs = tf.identity(coeffs)
-                freqs = tf.identity(freqs)
+                in_s = tf.identity(in_s,name='identity_in_s')
+                coeffs = tf.identity(coeffs,name='identity_coeffs')
+                freqs = tf.identity(freqs,name='identity_freqs')
     
     
                 for i in range(N_t):
@@ -378,11 +385,12 @@ class tf_sdft:
                     
                     in_s = tf.concat([new_val,in_s],axis=0)
                     delta = in_s[0] - last
-                   
-                    freqs = tf.math.multiply((freqs+delta),coeffs)
+                    
+                    freq_delta = freqs + delta
+                    freqs = tf.math.multiply(freq_delta,coeffs)
     
                 return freqs,in_s
-            
+
             new_freqs, new_in_s = func(input_tensor,self.N_t,
                     self.in_s,self.coeffs,self.freqs)
             
@@ -390,7 +398,7 @@ class tf_sdft:
             self.freqs = self.freqs.assign(new_freqs)
     
             with tf.control_dependencies([self.in_s,self.freqs]):
-                new_freqs = tf.identity(new_freqs)
+                new_freqs = tf.real(tf.identity(new_freqs))
 
         return new_freqs
 
